@@ -18,9 +18,9 @@ from pathlib import Path
 def get_historical_weather(city, start_date,  end_date, latitude, longitude):
     # latitude, longitude = get_city_coordinates(city)
 
-    # Setup the Open-Meteo API client with cache and retry on error
-    cache_session = requests_cache.CachedSession('.cache', expire_after = -1)
-    retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+    # Setup the Open-Meteo API client with retry on error.
+    # See get_hourly_weather_forecast for why CachedSession is avoided.
+    retry_session = retry(requests.Session(), retries = 5, backoff_factor = 0.2)
     openmeteo = openmeteo_requests.Client(session = retry_session)
 
     # Make sure all required weather variables are listed here
@@ -69,9 +69,14 @@ def get_hourly_weather_forecast(city, latitude, longitude):
 
     # latitude, longitude = get_city_coordinates(city)
 
-    # Setup the Open-Meteo API client with cache and retry on error
-    cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
-    retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+    # Setup the Open-Meteo API client with retry on error.
+    #
+    # requests_cache.CachedSession is deliberately not used here: on Python
+    # 3.12 its annotations fail to resolve against newer requests versions
+    # ("NameError: name 'RequestsCookieJar' is not defined"), which breaks
+    # the daily pipeline in CI. The cache only saved a repeated call within
+    # an hour, so a plain retry session is an even trade.
+    retry_session = retry(requests.Session(), retries = 5, backoff_factor = 0.2)
     openmeteo = openmeteo_requests.Client(session = retry_session)
 
     # Make sure all required weather variables are listed here
