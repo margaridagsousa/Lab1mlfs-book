@@ -1,5 +1,12 @@
 # ============================================================
 # TASK 1 - run this ONE cell after restarting the runtime
+#
+# On a FRESH runtime, install everything BEFORE the first hopsworks
+# import - hsfs caches whether deltalake/confluent-kafka are present at
+# import time, and installing them later does not update those flags:
+#
+#   !pip install -q hopsworks confluent-kafka deltalake \
+#       openmeteo-requests requests-cache retry-requests geopy xgboost
 # ============================================================
 import getpass, os, json, datetime
 import pandas as pd
@@ -57,8 +64,8 @@ weather_df['city'] = city
 print(f"weather rows: {len(weather_df)}")
 
 # --- 5. connect ----------------------------------------------
-import deltalake, hopsworks
-print("deltalake", deltalake.__version__)
+import deltalake, confluent_kafka, hopsworks
+print("deltalake", deltalake.__version__, "| confluent_kafka", confluent_kafka.__version__)
 
 project = hopsworks.login()
 fs = project.get_feature_store()
@@ -88,6 +95,7 @@ air_quality_fg = fs.get_or_create_feature_group(
     version=1,
     primary_key=['country', 'city', 'street'],
     event_time='date',
+    time_travel_format='HUDI',
 )
 air_quality_fg.insert(df_aq, wait=True)
 print("air_quality written")
@@ -99,6 +107,7 @@ weather_fg = fs.get_or_create_feature_group(
     version=1,
     primary_key=['city'],
     event_time='date',
+    time_travel_format='HUDI',
 )
 weather_fg.insert(weather_df, wait=True)
 print("weather written")
