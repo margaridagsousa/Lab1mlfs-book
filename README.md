@@ -1,98 +1,157 @@
-# Machine Learning Feature Store Book - Example Projects
+# ID2223 Lab 1 — Air Quality Prediction Service
 
-This repository contains three complete machine learning systems demonstrating different architectural patterns and use cases. Each project showcases best practices for building production ML systems with feature stores.
+A serverless ML system that forecasts PM2.5 air pollution for **every air
+quality sensor in the Lisboa area**, built on a feature store with pipelines
+that run daily without a server.
 
-## Quick Start
+**📊 Dashboard:** https://margaridagsousa.github.io/Lab1mlfs-book/air-quality/
 
-```bash
-git clone https://github.com/featurestorebook/mlfs-book.git
-cd mlfs-book
-cp .env-env .env
+**📈 Detailed results and analysis:** [RESULTS.md](RESULTS.md)
+
+Author: Margarida Sousa · KTH, ID2223 Scalable Machine Learning and Deep Learning
+
+---
+
+## What it does
+
+Predicts the daily PM2.5 level for the next 7 days at three AQICN monitoring
+stations, from weather forecasts and recent pollution history.
+
+| Station | AQICN uid | Coordinates |
+|---|---|---|
+| Olivais, Lisboa | [10513](https://aqicn.org/station/portugal/lisboa/olivais/) | 38.7689 °N, −9.1081 °E |
+| Entrecampos, Lisboa | [8379](https://aqicn.org/station/portugal/lisboa/entrecampos/) | 38.7486 °N, −9.1489 °E |
+| Laranjeiro, Almada | [8381](https://aqicn.org/station/portugal/almada/laranjeiro/) | 38.6636 °N, −9.1578 °E |
+
+Data sources: [AQICN](https://aqicn.org) for measured air quality,
+[Open-Meteo](https://open-meteo.com) for historical weather and ECMWF forecasts.
+
+## Architecture
+
+Feature/Training/Inference (FTI) pipelines around a
+[Hopsworks](https://www.hopsworks.ai) feature store:
+
+```
+   AQICN API ─┐
+              ├──► backfill + daily feature pipelines ──► Hopsworks Feature Store
+Open-Meteo API ┘                                              │
+                                                              ├──► training pipeline ──► Model Registry
+                                                              │                              │
+                                                              └──► batch inference ◄─────────┘
+                                                                        │
+                                                                        └──► GitHub Pages dashboard
 ```
 
-1. Create an account on https://run.hopsworks.ai
-2. (Create an API key on Hopsworks)[https://docs.hopsworks.ai/latest/user_guides/projects/api_key/create_api_key/] and set its value in the HOPSWORKS_API_KEY line in the `.env` file
-3. Update `HOPSWORKS_PROJECT` in the `.env` file to the name of your project
+**Feature groups**
 
-To run the starter titanic batch ML system:
-```bash
-cd titanic 
-source setup.sh
-inv all
+| Name | Primary key | Contents |
+|---|---|---|
+| `air_quality` | `country`, `city`, `street` | Daily PM2.5 per sensor |
+| `weather` | `city` | Daily temperature, precipitation, wind speed, wind direction |
+| `air_quality_lagged` | `country`, `city`, `street` | PM2.5 plus 1/2/3-day lags |
+| `air_quality_all_sensors` | `country`, `city`, `street` | All three sensors, with lags |
+| `aq_predictions` | `city`, `street`, `date`, `days_before_forecast_day` | Stored forecasts, for monitoring |
+
+Air quality is keyed **per sensor** while weather is keyed **per city** — the
+sensors are a few km apart and share one weather record per day. That is why
+extending from one sensor to three needed no new weather data at all.
+
+`event_time='date'` on every group is what makes the point-in-time join and the
+date-based train/test split possible.
+
+## Results
+
+| Model | Features | MSE | RMSE | R² |
+|---|---|---|---|---|
+| Baseline | 4 weather | 222.15 | 14.90 | −0.904 |
+| **+ lagged PM2.5** | 4 weather + 3 lags | **56.73** | **7.53** | **+0.514** |
+| All sensors | + `street` | 67.87 | 8.24 | +0.521 |
+| *Persistence baseline* | *`pm25_lag_1` alone* | *45.66* | *6.76* | *+0.609* |
+
+Three findings worth highlighting:
+
+1. **Weather alone cannot predict PM2.5.** The baseline scored R² = −0.904 —
+   worse than predicting the mean. Weather disperses pollution; it does not
+   create it.
+2. **Lagged features cut MSE by 74.5%.** PM2.5 correlates +0.68 with the
+   previous day, and that autocorrelation is the strongest available signal.
+3. **A persistence baseline still beats the trained model.** "Today equals
+   yesterday" scores MSE 45.66 against the model's 56.73. Most of the
+   improvement in (2) comes from the lag features rather than from the
+   learning, and the weather features add variance the target does not have.
+   Reporting only the 74.5% improvement would have been misleading.
+
+See [RESULTS.md](RESULTS.md) for per-sensor breakdowns, the hindcast analysis,
+and a discussion of why multi-step forecasts compound bias.
+
+## Repository layout
+
+```
+airquality/notebooks/
+  1_air_quality_feature_backfill.ipynb   original book notebooks,
+  2_air_quality_feature_pipeline.ipynb   retargeted to the Olivais sensor
+  3_air_quality_training_pipeline.ipynb
+  4_air_quality_batch_inference.ipynb
+
+  colab_1_backfill.ipynb                 Task 1  backfill
+  colab_3_training.ipynb                 Task 3  training + Task 5 hindcast
+  colab_4_inference.ipynb                Task 4  batch inference + dashboard
+  colab_4b_hindcast_backfill.ipynb       Task 5  populate the hindcast
+  colab_6_lagged_features.ipynb          Task 6  lagged features (Grade C)
+  colab_7_all_sensors.ipynb              Task 7  all sensors (Grade A)
+
+.github/workflows/air-quality-daily.yml  daily pipeline, 06:11 UTC
+data/                                    historical CSVs from aqicn.org
+docs/air-quality/                        the published dashboard
+RESULTS.md                               measurements and analysis
 ```
 
-To run the air quality batch ML system:
+The `colab_*` notebooks are self-contained versions written for Google Colab —
+see [Running the pipelines](#running-the-pipelines) below for why.
+
+## Running the pipelines
+
+The daily feature pipeline runs automatically on GitHub Actions
+(`cron: '11 6 * * *'`) and can also be triggered manually from the Actions tab.
+It needs four repository secrets: `HOPSWORKS_API_KEY`, `HOPSWORKS_PROJECT`,
+`HOPSWORKS_HOST` and `AQICN_API_KEY`.
+
+The other pipelines are run from the `colab_*` notebooks. They exist because
+`hopsworks` cannot be installed on native Windows — its `pyjks` → `twofish`
+dependency has no Windows wheel and needs a C++ toolchain — so the pipelines
+were developed and run on Linux via Colab. Each notebook is self-contained:
+it installs its dependencies, prompts for credentials, and needs no local
+checkout.
+
+For a local Linux/macOS/WSL setup instead:
+
 ```bash
+cp .env.example .env       # then fill in your keys
 cd airquality
 source setup.sh
 inv all
 ```
 
-To run the credit-card fraud real-time ML system:
-```bash
-cd ccfraud
-source setup.sh
-inv all
-```
-**Note:** This requires a command line on your laptop and has been tested on Linux, Mac, and Windows Subsystem for Linux (WSL).
+## Notes on the implementation
 
-## Projects
+A few decisions that differ from the book's version, each made in response to a
+concrete failure — the full list is in the last section of [RESULTS.md](RESULTS.md):
 
-### 1. Batch Air Quality Predictions
+- **Feature groups use `time_travel_format='HUDI'`.** The cluster defaults to
+  DELTA, whose writes go through `delta-rs` directly to Hopsworks HDFS and fail
+  from Colab with `RPC listener disconnected`.
+- **`requests-cache` was removed** from the Open-Meteo clients. On Python 3.12
+  its annotations fail to resolve against newer `requests`, breaking the daily
+  pipeline in CI with `NameError: RequestsCookieJar`.
+- **Lags are computed on a continuous daily calendar**, not with a plain
+  `shift()`. The sensor record has 656 missing days, and shifting over present
+  rows alone would have paired readings up to 49 days apart as "yesterday".
+- **Great Expectations validation is optional.** GE 1.x requires an active
+  DataContext to build a suite, while the Hopsworks integration targets the
+  0.18.x API; the PM2.5 range is asserted directly instead.
 
-A batch ML system that forecasts air quality (PM 2.5) for the next 7 days using real-time weather data and historical air quality measurements from public sensors (https://waqi.info/). The system uses XGBoost to generate predictions and displays them on an interactive dashboard.
+## Acknowledgements
 
-**Type:** Batch Predictions
-**Model:** XGBoost Regression
-**Features:** Weather forecasts, historical air quality data
-**Output:** 7-day air quality forecast dashboard
-
-![Air quality Prediction](https://featurestorebook.github.io/mlfs-book/air-quality/assets/img/pm25_forecast.png)
-
-**Optional LLM Enhancement:** The air quality service can be augmented with LLM capabilities for natural language queries about air quality forecasts and historical trends.
-
-[View Project →](./airquality)
-
-### 2. Real-Time Credit Card Fraud Detection
-
-A real-time ML system that detects fraudulent credit card transactions using streaming data and real-time feature engineering. This project demonstrates how to build low-latency prediction services that process transactions as they occur, using Feldera for stream processing.
-
-**Type:** Real-Time Predictions
-**Model:** Binary Classification (XGBoost)
-**Features:** Real-time transaction aggregates, velocity features
-**Output:** Fraud probability for each transaction
-**Data:** Synthetic credit card transactions
-
-[View Project →](./ccfraud)
-
-### 3. Starter Titanic Batch Predictions
-
-A starter ML system for predicting Titanic passenger survival. This project provides a simple, well-structured example of a batch ML pipeline using the classic Titanic dataset for training and synthetic data for generating daily predictions. Includes both a batch dashboard and an interactive UI.
-
-**Type:** Batch Predictions
-**Model:** Binary Classification (XGBoost)
-**Features:** Passenger demographics, ticket class, family size
-**Output:** Dashboard and interactive Gradio UI
-**Data:** Historical Titanic dataset + synthetic passengers
-
-[View Project →](./titanic)
-
-## Architecture
-
-Each project follows a similar architectural pattern:
-- **Feature Store:** Central repository for feature storage and retrieval
-- **Feature Pipeline:** ETL jobs that compute and store features
-- **Training Pipeline:** Model training with versioning and experiment tracking
-- **Inference Pipeline:** Batch or real-time predictions
-- **UI/Dashboard:** Visualization of predictions and monitoring
-
-![Application Architecture](app-air-quality-with-llms.png)
-
-## Getting Started
-
-Each project can be run independently. Navigate to the project directory and follow the instructions in its README.md file.
-
-## Additional Resources
-
-You can find [additional tutorial instructions in this Google Doc](https://docs.google.com/document/d/1YXfM1_rpo1-jM-lYyb1HpbV9EJPN6i1u6h2rhdPduNE/edit?usp=sharing).
-
+Built from the example project in *Building Machine Learning Systems with a
+Feature Store* by Jim Dowling
+([featurestorebook/mlfs-book](https://github.com/featurestorebook/mlfs-book)).

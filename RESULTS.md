@@ -300,15 +300,78 @@ from the previous day.
 
 ## Task 7 — All sensors in Lisboa (Grade A)
 
-Lisboa has **3 AQICN sensors**:
+Extended from one sensor to **every AQICN station in the Lisboa area**.
 
-| Station | uid | Coordinates |
-|---|---|---|
-| Olivais, Lisboa | 10513 | 38.7689, −9.1081 |
-| Entrecampos, Lisboa | 8379 | 38.7486, −9.1489 |
-| Laranjeiro, Almada | 8381 | 38.6636, −9.1578 |
+| Station | uid | Coordinates | Rows | Mean PM2.5 |
+|---|---|---|---|---|
+| Olivais, Lisboa | 10513 | 38.7689, −9.1081 | 3,475 | 36.1 |
+| Entrecampos, Lisboa | 8379 | 38.7486, −9.1489 | 3,234 | 42.1 |
+| Laranjeiro, Almada | 8381 | 38.6636, −9.1578 | 3,384 | 35.0 |
+| **Total** | | | **10,093** | |
 
-_(to fill in)_
+### Design: one model, not three
+
+`street` is included as a **categorical feature**, so a single model learns each
+site's offset while sharing the signal common to all of them. The alternative —
+three separate models — would have tripled the registry entries and the
+inference code for a set of sensors only a few km apart in the same weather.
+
+The choice also triples the training data, from 3,415 rows to 9,911.
+
+**No new weather data was required.** The `weather` feature group is keyed on
+`city`, so all three sensors join to the same weather rows. This is the payoff
+from the Task 1 decision to key air quality per-sensor but weather per-city.
+
+### Results
+
+Trained on 9,911 rows, tested on 182 (2026-06-08 → 2026-08-07).
+
+| | MSE | RMSE | R² |
+|---|---|---|---|
+| **All-sensor model** | **67.87** | **8.24** | **+0.521** |
+
+Per sensor:
+
+| Sensor | n | MSE | R² | Persistence MSE |
+|---|---|---|---|---|
+| Olivais | 60 | 55.55 | +0.525 | 45.60 |
+| Entrecampos | 61 | 77.81 | +0.328 | 48.48 |
+| Laranjeiro | 61 | 70.04 | +0.124 | 31.16 |
+
+Registered as `air_quality_xgboost_all_sensors` v1.
+
+### Observations
+
+1. **Per-sensor accuracy varies a lot.** Olivais (R² +0.525) is predicted far
+   better than Laranjeiro (+0.124). Laranjeiro is across the Tagus in Almada,
+   so city-level Lisboa weather describes it least well — a limitation of
+   sharing one weather feature group across a metropolitan area.
+2. **Persistence still wins at every sensor**, and by the widest margin at
+   Laranjeiro (31.16 vs 70.04). The Task 6 conclusion holds across all three
+   sites: this target is dominated by its own autocorrelation.
+3. **The single model roughly matches the single-sensor model** (R² +0.521 vs
+   +0.514) while covering 3× the sensors, so pooling cost essentially nothing.
+
+### ⚠️ Multi-step forecasts compound bias
+
+The 7-day forecast rises steadily to 102–114 µg/m³ at every sensor, which is
+**not credible** — measured summer values sit in the 17–58 range.
+
+The cause is recursive forecasting. Only day 1 uses measured lag values; every
+subsequent day feeds the model's own previous prediction back in as
+`pm25_lag_1`. Because the model is biased slightly high, that bias compounds:
+each prediction inflates the next day's input, and the curve runs away before
+flattening as the model saturates.
+
+This is a real limitation of the design, not a coding error, and the honest
+reading is:
+
+- **Day-1 predictions are trustworthy** (this is what the hindcast measures).
+- **Beyond ~3 days the forecast degrades** and should not be presented as a
+  reliable air-quality warning.
+- **A production fix** would be *direct multi-step forecasting*: train a
+  separate model per horizon (t+1, t+2, … t+7), each predicting from measured
+  features only, so no prediction is ever fed back as an input.
 
 ---
 
