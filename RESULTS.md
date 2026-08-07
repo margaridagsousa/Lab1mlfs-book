@@ -17,7 +17,7 @@ Running record of what was built and measured, for the report and the defence.
 | 1 | Backfill pipeline → 2 Feature Groups | ✅ Done |
 | 2 | Daily feature pipeline on GitHub Actions | ✅ Done |
 | 3 | Training pipeline → registered model | ✅ Done |
-| 4 | Batch inference → dashboard | 🔄 In progress |
+| 4 | Batch inference → dashboard | ✅ Done |
 | 5 | Hindcast graph (monitoring) | ✅ Done |
 | 6 | Lagged features (Grade C) | ⬜ Not started |
 | 7 | All sensors in one city (Grade A) | ⬜ Not started |
@@ -35,6 +35,9 @@ pulled from the Open-Meteo archive API for the sensor's coordinates.
 | `weather` v1 | 4,571 | `date`, `temperature_2m_mean`, `precipitation_sum`, `wind_speed_10m_max`, `wind_direction_10m_dominant`, `city` | 2014-01-31 → 2026-08-06 |
 
 **≈12.5 years of history**, well beyond the ">1 year" the task asks for.
+
+A third feature group, `aq_predictions` v1, is created later by the batch
+inference pipeline (Task 4) to store predictions for monitoring.
 
 Design notes worth defending:
 - `air_quality` is keyed on `['country','city','street']` — a **specific sensor**.
@@ -131,13 +134,41 @@ accuracy can be tracked as outcomes arrive.
 
 ## Task 4 — Batch inference & dashboard
 
-_(to fill in after the run)_
+Downloads `air_quality_xgboost_model` v1 from the Hopsworks model registry,
+reads the weather **forecast** rows written by the daily pipeline, and predicts
+PM2.5 for each of the next 7 days.
 
 | | |
 |---|---|
-| Forecast days | |
-| Predicted PM2.5 range | |
-| Dashboard URL | |
+| Forecast days | 7 (2026-08-07 → 2026-08-13) |
+| Predicted PM2.5 range | 26.5 – 71.4 µg/m³ |
+| Dashboard image | `docs/air-quality/assets/img/pm25_forecast.png` |
+| Dashboard URL | https://margaridagsousa.github.io/Lab1mlfs-book/air-quality/ |
+
+### Forecast produced 2026-08-07
+
+| Date | Predicted PM2.5 (µg/m³) | AQI band |
+|---|---|---|
+| 2026-08-07 | 52.3 | Moderate |
+| 2026-08-08 | 57.7 | Moderate |
+| 2026-08-09 | 71.4 | Moderate |
+| 2026-08-10 | 69.8 | Moderate |
+| 2026-08-11 | 55.9 | Moderate |
+| 2026-08-12 | 26.5 | Good |
+| 2026-08-13 | 56.2 | Moderate |
+
+A third feature group, `aq_predictions` v1, keyed on
+`['city','street','date','days_before_forecast_day']`, stores every forecast so
+that predictions can later be compared against measured outcomes. The
+`days_before_forecast_day` column records the forecast horizon, which is what
+makes a *1-day* hindcast selectable from among all stored predictions.
+
+### Caveat on these predictions
+
+The baseline model over-predicts (see Task 3): its test-window predictions
+reached ~70 µg/m³ where actuals stayed ≤58. The forecast above should be read
+with that bias in mind — the 71.4 µg/m³ peak is more likely mid-50s in reality.
+Task 6 addresses this.
 
 ---
 
