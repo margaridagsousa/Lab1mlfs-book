@@ -125,10 +125,48 @@ This baseline is the "before" half of the Task 6 comparison.
 
 ## Task 5 — Monitoring / hindcast
 
-Hindcast chart of predictions vs measured outcomes over the 61-day test window,
-saved with the model in the registry and published to the dashboard. The
-`aq_predictions` feature group records each day's forecast so that prediction
-accuracy can be tracked as outcomes arrive.
+Hindcast chart of predictions vs measured outcomes, published to the dashboard
+at `docs/air-quality/assets/img/pm25_hindcast_1day.png`.
+
+The `aq_predictions` feature group records every forecast together with the
+horizon it was made at (`days_before_forecast_day`), so predictions can be
+compared against outcomes as they arrive. The chart selects only forecasts made
+1 day ahead.
+
+### Hindcast over the 61-day test window
+
+| Metric | Value |
+|---|---|
+| Days compared | 61 (2026-06-08 → 2026-08-07) |
+| MSE | 178.94 |
+| R² | −0.533 |
+| **Mean bias** | **+6.41 µg/m³ (over-predicting)** |
+
+MSE and R² match the Task 3 test metrics exactly, confirming the hindcast
+replays the same held-out window.
+
+### What the chart shows
+
+Two failure modes are visible and worth pointing out:
+
+1. **Systematic over-prediction** — the predicted line sits above the actual
+   line on most days, quantified as the +6.41 µg/m³ mean bias. Several days are
+   pushed into the "Moderate" band when the true reading was "Good".
+2. **Excess day-to-day volatility** — measured PM2.5 moves in smooth multi-day
+   waves, while predictions zigzag. The model is tracking daily weather noise,
+   but real pollution has *momentum* that weather features cannot express.
+
+That momentum is exactly what the lagged features in Task 6 supply.
+
+### Note on how the hindcast was populated
+
+The daily pipeline only accumulates predictions from the day it first runs, so a
+fresh deployment has a single matched pair. The monitoring group was therefore
+backfilled by replaying the trained model over the past 60 days of weather
+already in the feature store.
+
+These remain honest out-of-sample predictions: the model was trained on data up
+to 2026-06-07, so every backfilled day was unseen during training.
 
 ---
 
