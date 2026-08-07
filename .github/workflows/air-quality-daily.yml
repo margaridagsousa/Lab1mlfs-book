@@ -2,8 +2,8 @@ name: air-quality-daily
 
 on:
   workflow_dispatch:
-    #schedule:
-    #- cron: '11 6 * * *'
+  schedule:
+    - cron: '11 6 * * *'
 
 jobs:
   schedule_pipelines:
@@ -20,19 +20,22 @@ jobs:
       - name: setup python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.12'
           cache: 'pip'
       - name: install python packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r airquality/requirements.txt
+          pip install ipython nbformat
 
       - name: execute python workflows from bash script
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          AQICN_API_KEY: ${{ secrets.AQICN_API_KEY }}
+          HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
         run: |
-          ipython notebooks/airquality/2_air_quality_feature_pipeline.ipynb
-          ipython notebooks/airquality/4_air_quality_batch_inference.ipynb
+          ipython airquality/notebooks/2_air_quality_feature_pipeline.ipynb
+          ipython airquality/notebooks/4_air_quality_batch_inference.ipynb
       - name: github pages publish
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
