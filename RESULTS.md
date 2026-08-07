@@ -19,8 +19,8 @@ Running record of what was built and measured, for the report and the defence.
 | 3 | Training pipeline → registered model | ✅ Done |
 | 4 | Batch inference → dashboard | ✅ Done |
 | 5 | Hindcast graph (monitoring) | ✅ Done |
-| 6 | Lagged features (Grade C) | ⬜ Not started |
-| 7 | All sensors in one city (Grade A) | ⬜ Not started |
+| 6 | Lagged features (Grade C) | ✅ Done |
+| 7 | All sensors in one city (Grade A) | 🔄 In progress |
 
 ---
 
@@ -212,12 +212,89 @@ Task 6 addresses this.
 
 ## Task 6 — Lagged features (Grade C)
 
-_(to fill in)_
+Added `pm25_lag_1`, `pm25_lag_2`, `pm25_lag_3` — the measured PM2.5 from 1, 2
+and 3 days earlier — as features, and measured the effect.
+
+**Hypothesis:** PM2.5 is strongly autocorrelated, and the baseline model had no
+access to that. Weather *disperses* pollution rather than producing it, so
+yesterday's reading should be the single most informative feature available.
+
+Measured autocorrelation at this sensor:
+
+| Lag | Correlation with today's PM2.5 |
+|---|---|
+| 1 day | **+0.676** |
+| 2 days | +0.428 |
+| 3 days | +0.308 |
+
+### Results
+
+Both models trained and tested on **identical rows** (train 3,415 / test 61,
+2026-06-08 → 2026-08-07), so the difference is attributable to the features
+alone and not to a different split.
 
 | Model | Features | MSE | RMSE | R² |
 |---|---|---|---|---|
-| v1 baseline | 4 weather | 178.94 | 13.38 | −0.533 |
-| v2 + lags | 4 weather + `pm25_lag_1/2/3` | | | |
+| v1 weather only | 4 weather | 222.15 | 14.90 | −0.904 |
+| **v2 weather + lags** | 4 weather + 3 lags | **56.73** | **7.53** | **+0.514** |
+| Persistence baseline | `pm25_lag_1` alone | 45.66 | 6.76 | +0.609 |
+
+**MSE improved by 74.5%.** R² moved from −0.904 (worse than predicting the
+mean) to +0.514 (explaining about half the variance). Typical daily error
+halved, from 14.9 to 7.5 µg/m³.
+
+Registered as `air_quality_xgboost_model_lagged` v1.
+
+> Note: v1 scores differently here (MSE 222.15) than in Task 3 (MSE 178.94)
+> because building the lags drops the first days and any row following a gap in
+> the sensor record. v1 was therefore re-trained on this smaller, identical
+> subset so the comparison is fair.
+
+### The persistence baseline beats the model
+
+Predicting "today = yesterday" scores **MSE 45.66 / R² +0.609**, better than
+the trained model's 56.73 / +0.514. This is the most important finding of the
+task and should be stated plainly rather than hidden:
+
+1. **Almost all the improvement came from the lag features, not from the
+   model.** Once the model can see yesterday's value, it is essentially
+   learning a noisy approximation of "repeat yesterday".
+2. **The weather features actively hurt.** They inject day-to-day variance the
+   target does not have, so the model oscillates around the persistence signal
+   instead of tracking it. This is visible in the comparison chart, where the
+   red v1 line spikes to 86 µg/m³ on a day the actual reading was ~30.
+3. **A good baseline is essential.** Reporting only "MSE improved 74.5%" would
+   have looked like a success story, while the honest conclusion is that a
+   one-line heuristic still outperforms the ML model on this problem.
+
+### Feature importance for v2
+
+| Feature | Importance |
+|---|---|
+| `temperature_2m_mean` | 1060 |
+| `wind_speed_10m_max` | 793 |
+| `wind_direction_10m_dominant` | 782 |
+| `pm25_lag_1` | 612 |
+| `pm25_lag_2` | 572 |
+| `pm25_lag_3` | 550 |
+| `precipitation_sum` | 322 |
+
+XGBoost's default importance counts *how often* a feature is split on, not how
+much predictive value it carries. Weather features are continuous and
+high-cardinality, so they attract many low-value splits; the lags are used less
+often but carry far more signal — as the 74.5% MSE improvement shows. Worth
+knowing at the defence: this metric is easy to misread.
+
+### How the lags were computed
+
+The sensor record has **656 missing days** out of a 4,571-day span. A naive
+`shift(1)` over the rows present would have paired readings across those gaps —
+175 rows affected, the worst pairing readings **49 days apart** as "yesterday".
+
+The lags are therefore computed after reindexing to a continuous daily calendar,
+leaving gaps as NaN, and rows without a complete set of lags are dropped. That
+keeps 3,476 of 3,916 readings (88.8%) and guarantees every lag value really is
+from the previous day.
 
 ---
 
