@@ -68,18 +68,38 @@ date-based train/test split possible.
 | All sensors | + `street` | 67.87 | 8.24 | +0.521 |
 | *Persistence baseline* | *`pm25_lag_1` alone* | *45.66* | *6.76* | *+0.609* |
 
-Three findings worth highlighting:
+Note that the rows above are **nowcasts** — predicting today's PM2.5 given
+today's weather and yesterday's reading. True forecasting is harder, and the
+skill decays quickly:
+
+| Horizon | Model R² | Persistence R² |
+|---|---|---|
+| t+1 | +0.02 | **+0.70** |
+| t+2 | +0.14 | +0.27 |
+| t+3 | −0.15 | −0.12 |
+| t+7 | −0.73 | −0.94 |
+
+Four findings worth highlighting:
 
 1. **Weather alone cannot predict PM2.5.** The baseline scored R² = −0.904 —
    worse than predicting the mean. Weather disperses pollution; it does not
    create it.
 2. **Lagged features cut MSE by 74.5%.** PM2.5 correlates +0.68 with the
    previous day, and that autocorrelation is the strongest available signal.
-3. **A persistence baseline still beats the trained model.** "Today equals
-   yesterday" scores MSE 45.66 against the model's 56.73. Most of the
-   improvement in (2) comes from the lag features rather than from the
-   learning, and the weather features add variance the target does not have.
-   Reporting only the 74.5% improvement would have been misleading.
+3. **A persistence baseline beats the trained model** at essentially every
+   horizon. "Tomorrow will be like today" scores R² +0.70 one day ahead against
+   the model's +0.02. Most of the improvement in (2) comes from the lag
+   features rather than from the learning.
+4. **Beyond ~2 days there is no usable skill.** Both the model and persistence
+   fall below R² = 0 from day three, meaning neither beats predicting the
+   long-run average. Daily PM2.5 at these stations is not predictable from
+   daily weather at that range.
+
+Reporting only the 74.5% improvement would have been misleading, so the skill
+decomposition is published alongside it. [RESULTS.md](RESULTS.md) discusses what
+additional data — emission proxies, regional dust and smoke transport,
+boundary-layer stability, sub-daily resolution — would be needed to forecast
+this target usefully.
 
 See [RESULTS.md](RESULTS.md) for per-sensor breakdowns, the hindcast analysis,
 and a discussion of why multi-step forecasts compound bias.

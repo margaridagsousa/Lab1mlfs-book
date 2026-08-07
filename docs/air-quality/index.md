@@ -21,11 +21,24 @@ trained on 10,093 daily observations. The station enters the model as a
 categorical feature, so one model learns each site's characteristic offset
 while sharing the signal common to all of them.
 
-> **Reading these forecasts:** only the day-1 prediction uses measured inputs.
-> Later days feed the model's own predictions back in as lagged features, so
-> bias compounds and the upward trend beyond ~3 days is an artifact of that
-> feedback rather than a genuine air-quality warning. The hindcast below
-> measures day-1 accuracy, which is the horizon to trust.
+Forecasts use **direct multi-step** models — one per horizon, each predicting
+from measured features only, so no prediction is ever fed back in as an input.
+
+> **How much to trust these:** not very much, and the chart below says why.
+> On the held-out test window this model scores R² ≈ +0.02 one day ahead and
+> falls below zero from day three, meaning it does not beat simply predicting
+> the long-run average. A plain "tomorrow will be like today" baseline
+> outperforms it at every short horizon. This is reported rather than hidden:
+> daily PM2.5 at these stations is not well predicted by daily weather.
+
+## How far ahead is this useful?
+
+![Forecast skill](./assets/img/forecast_skill_by_horizon.png)
+
+R² above zero beats predicting the mean; below zero it does not. The
+persistence line — "predict t+h as today's value" — beats the trained model at
+almost every horizon, which locates the real signal: PM2.5 is autocorrelated,
+and that autocorrelation is nearly all the predictability available here.
 
 ### Single-sensor forecast (Olivais)
 

@@ -373,6 +373,66 @@ reading is:
   separate model per horizon (t+1, t+2, … t+7), each predicting from measured
   features only, so no prediction is ever fed back as an input.
 
+### Fix: direct multi-step forecasting
+
+Implemented in `colab_7b_direct_multistep.ipynb`. Seven models are trained, one
+per horizon; each predicts PM2.5 at t+h from features measured at time t, so no
+prediction is ever an input to another prediction.
+
+**The forecast is now plausible.** Predictions span 22–73 µg/m³ across the three
+sensors and stay flat-to-varying instead of climbing, against the recursive
+version's 102–114 µg/m³.
+
+### Forecast skill by horizon
+
+| Horizon | Model R² | Persistence R² | Useful? |
+|---|---|---|---|
+| t+1 | +0.02 | **+0.70** | No — persistence far better |
+| t+2 | **+0.14** | +0.27 | Marginally, but persistence still wins |
+| t+3 | −0.15 | −0.12 | No |
+| t+4 | −0.73 | −0.39 | No |
+| t+5 | −0.55 | −0.57 | No |
+| t+6 | −1.17 | −0.73 | No |
+| t+7 | −0.73 | −0.94 | No |
+
+**This is the honest conclusion of the project, and it should be stated
+plainly:**
+
+1. **The model has almost no skill at any horizon.** Only t+2 is above zero by
+   a meaningful margin, and even there a persistence baseline beats it.
+2. **Persistence dominates at short horizons** (R² +0.70 at t+1). Practically,
+   the best 1-day forecast for this sensor network is "tomorrow will be like
+   today" — no machine learning required.
+3. **Both decay to useless by t+3–4.** Beyond roughly two days, neither the
+   model nor persistence beats predicting the long-run mean. Daily PM2.5 at
+   these stations is not predictable from daily weather at this range.
+4. **The Task 6 result is consistent with this.** The 74.5% MSE improvement
+   from lag features looked impressive, but the skill decomposition shows why:
+   the lags were carrying almost all of the signal, and the signal itself is
+   only the target's autocorrelation.
+
+Why the earlier single-sensor figure (R² +0.514, Task 6) looks better than the
++0.02 here: that number is for a *nowcast* — predicting today's PM2.5 given
+today's weather and yesterday's reading. Genuine forecasting means predicting a
+day whose weather has not happened yet, which is a strictly harder problem. The
+drop from +0.514 to +0.02 is the price of that distinction, and it is easy to
+report the flattering number by accident.
+
+### What would actually be needed
+
+To forecast PM2.5 usefully at these stations, the system would need drivers the
+current features do not contain:
+
+- **Emission proxies** — traffic counts, industrial activity, day-of-week
+  patterns. PM2.5 is produced by human activity; weather only disperses it.
+- **Regional transport** — Saharan dust intrusions and wildfire smoke drive
+  many of Lisboa's PM2.5 spikes and arrive from outside the city entirely.
+- **Atmospheric stability** — boundary-layer height and inversion conditions
+  govern whether pollution accumulates or disperses, and neither is captured by
+  surface temperature or wind speed.
+- **Sub-daily resolution** — daily means hide the morning and evening traffic
+  peaks that dominate the exposure people actually experience.
+
 ---
 
 ## Engineering problems solved
