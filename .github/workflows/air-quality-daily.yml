@@ -28,15 +28,27 @@ jobs:
           pip install -r airquality/requirements.txt
           pip install ipython nbformat
 
-      - name: execute python workflows from bash script
+      - name: feature pipeline (Task 2)
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
           AQICN_API_KEY: ${{ secrets.AQICN_API_KEY }}
           HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
+          HOPSWORKS_HOST: ${{ secrets.HOPSWORKS_HOST }}
         run: |
           ipython airquality/notebooks/2_air_quality_feature_pipeline.ipynb
+
+      # Enable once the model is trained (Task 3) and the dashboard exists (Task 4)
+      - name: batch inference (Task 4)
+        if: ${{ vars.RUN_BATCH_INFERENCE == 'true' }}
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          AQICN_API_KEY: ${{ secrets.AQICN_API_KEY }}
+          HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
+          HOPSWORKS_HOST: ${{ secrets.HOPSWORKS_HOST }}
+        run: |
           ipython airquality/notebooks/4_air_quality_batch_inference.ipynb
       - name: github pages publish
+        if: ${{ vars.RUN_BATCH_INFERENCE == 'true' }}
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Air Quality Dashboard published"
